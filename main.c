@@ -211,6 +211,21 @@ bool process_input(EDITOR* editor){
                 // TODO: Handle new line insertion
                 // Move the cursor to the next line
 
+            } else if( ch == 8 || ch == 127){ //bacspace key
+                // Only delete if we're not at the beginning of the line
+                if(editor->cursor_x > 0){
+                    int col = editor->cursor_x;
+                    int line = editor->cursor_y;
+
+                    // Remove characters by shifting everything after it
+                    memmove(&editor->lines[line][col - 1],
+                            &editor->lines[line][col],
+                            strlen(&editor->lines[line][col]) + 1);
+
+                    // Move the cursor back
+                    editor->cursor_x--;
+                }
+
             } else { 
                 int col = editor->cursor_x;
                 int line = editor->cursor_y;
