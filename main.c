@@ -250,8 +250,25 @@ bool process_input(EDITOR* editor){
             if(ch == 27){ // ESC key
                 editor->state = normal;
             } else if(ch == 13){ // Enter key
-                // TODO: Handle new line insertion
                 // Move the cursor to the next line
+                int cur_line = editor->cursor_y;
+                int cur_col = editor->cursor_x;
+
+                if(editor->line_count < MAX_LINES){
+                    for(int i = editor->line_count; i > cur_line; i--){
+                        strcpy(editor->lines[i], editor->lines[i - 1]);
+                    }
+
+                    // Copy remainder of lines to the next line
+                    strcpy(editor->lines[cur_line + 1], &editor->lines[cur_line][cur_col]);
+
+                    // Clear the current line after the cursor position
+                    editor->lines[cur_line][cur_col] = '\0';
+
+                    editor->line_count++;
+                    set_cursor_position(editor, 0, cur_line + 1);
+                }
+
                 
 
             } else if( ch == 8 || ch == 127){ //backspace key
