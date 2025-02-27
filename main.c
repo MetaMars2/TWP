@@ -44,7 +44,7 @@ typedef struct _editor {
 
 void init_editor(EDITOR* editor);
 void render_status_bar(EDITOR* editor, STATE STATE);
-void process_input(EDITOR* editor);
+bool process_input(EDITOR* editor);
 CURSOR get_cursor_input();
 COMMANDS get_command_input(STATE state);
 void execute_command(EDITOR* editor, COMMANDS cmd);
@@ -62,29 +62,42 @@ int main(int argc, char* argv[]) {
     }
 
 
-    printf("\033[2j"); // Clear the screen
+    printf("\033[2J"); // Clear the screen
     printf("\033[H"); // Move the cursor to the top left corner
 
     EDITOR editor;
     init_editor(&editor);
 
+    render_editor(&editor);
+    render_status_bar(&editor, editor.state);
+
+    bool needs_redraw = false;
+
     while(true){
-        render_editor(&editor);
-        render_status_bar(&editor, editor.state);
-        process_input(&editor);
-        Sleep(1);
+        // Process input first
+        needs_redraw = process_input(&editor);
+        
+        // Only redraw if something changed
+        if(needs_redraw){
+            render_editor(&editor);
+            render_status_bar(&editor, editor.state);
+        }
+
+        // Longer sleep to reduce CPU usage and flickering
+        Sleep(50);
     }
 
     return 0;
 }
 
 void init_editor(EDITOR* editor) {
-    editor->line_count = 0;
+    editor->lines[0][0] = '\0';
+    editor->line_count = 1;
     editor->cursor_x = 0;
     editor->cursor_y = 0;
     editor->state = normal;
-    strcpy(editor->filename, "meow.txt");
-    editor->is_saved = true;
+    strcpy(editor->filename, "meow.txt"); // TODO: Set the filename
+    editor->is_saved = true; // TODO: Check if the file is saved
 }
 
 void render_status_bar(EDITOR* editor, STATE STATE) {
@@ -137,8 +150,12 @@ COMMANDS get_command_input(STATE state){
     return -1;
 }
 
-void process_input(EDITOR* editor){
+bool process_input(EDITOR* editor){
+    bool input_changed = false;
+
     if(_kbhit()){
+        input_changed = true;
+
         if(editor->state == normal){
             // In normal mode, chech for both cursor movements and commands
             CURSOR cursor = get_cursor_input();
@@ -193,16 +210,23 @@ void process_input(EDITOR* editor){
             }
         }
     }
+    return input_changed;
 }
 
 void execute_command(EDITOR* editor, COMMANDS cmd){
     switch(cmd){
-        case cmd_save:
-            // TODO: Save file implementation
-            printf("\nFile saved");
-            Sleep(1000);
+        case cmd_save:{
+            CONSOLE_SCREEN_BUFFER_INFO csbi;
+            GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+            int msgline = csbi.srWindow.Bottom - 1;
+
+            printf("\033[%d;0H\033[K", msgline);
+            printf("File save successfully"); // TODO: Save file implementation & file save confirmation
+
             editor->is_saved = true;
+            Sleep(1500);
             break;
+        }
         case cmd_exit:
             if(editor->is_saved ){ // TODO: confirm_exit() needs to be implemented
                 exit(0);
