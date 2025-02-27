@@ -33,13 +33,15 @@ typedef enum _state {
 } STATE;
 
 typedef struct _editor {
-    char lines[MAX_LINES][MAX_COLUMNS]; // Array of lines
+    char lines[MAX_LINES][MAX_COLUMNS];
     int line_count; // Number of lines in the file
-    int cursor_x; // Cursor x position
-    int cursor_y; // Cursor y position
+    int cursor_x; 
+    int cursor_y; 
     STATE state; // Current state of the editor
-    char filename[FILENAME_MAX]; // Filename of the file
-    bool is_saved; // Is the file saved
+    char filename[FILENAME_MAX];
+    bool is_saved;
+    HANDLE current_buffer; // active buffer
+    HANDLE new_buffer; // new buffer
 } EDITOR;
 
 void init_editor(EDITOR* editor);
@@ -80,7 +82,6 @@ int main(int argc, char* argv[]) {
         // Only redraw if something changed
         if(needs_redraw){
             render_editor(&editor);
-            render_status_bar(&editor, editor.state);
         }
 
         // Longer sleep to reduce CPU usage and flickering
@@ -98,25 +99,42 @@ void init_editor(EDITOR* editor) {
     editor->state = normal;
     strcpy(editor->filename, "meow.txt"); // TODO: Set the filename
     editor->is_saved = true; // TODO: Check if the file is saved
+
+    // Screen buffer
+    editor->current_buffer = GetStdHandle(STD_OUTPUT_HANDLE);
+    editor->new_buffer = CreateConsoleScreenBuffer(
+        GENERIC_READ | GENERIC_WRITE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE,
+        NULL,
+        CONSOLE_TEXTMODE_BUFFER,
+        NULL
+    );
 }
 
 void render_status_bar(EDITOR* editor, STATE STATE) {
     
     CONSOLE_SCREEN_BUFFER_INFO csbi;
-    GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+    GetConsoleScreenBufferInfo(editor->current_buffer, &csbi);
     int last_line = csbi.srWindow.Bottom;
-    
-    // Clear the entire status line first
-    printf("\033[%d;0H\033[K", last_line);
 
-    // Then print the status information
-    printf("\033[%d;0H %s\t\t%s", last_line,
+    COORD status_pos = {0, last_line};
+    DWORD written;
+
+    // Clear the status line
+    FillConsoleOutputCharacter(editor->current_buffer, ' ', csbi.dwSize.X, status_pos, &written);
+
+    // Create status line
+    char status_text[256];
+    sprintf(status_text, " %s\t\t%s",
             STATE == normal ? "NORMAL" : "INSERT", editor->filename);
+    
+    // Write status text
+    WriteConsoleOutputCharacter(editor->current_buffer, status_text, 
+                                strlen(status_text), status_pos, &written);
 
-    // Move cursor back to editing position
-    printf("\033[%d;%dH", editor->cursor_y + 1, editor->cursor_x + 1);
-
-    fflush(stdout);
+    // Position cursor
+    SetConsoleCursorPosition(editor->current_buffer, 
+                            (COORD){editor->cursor_x, editor->cursor_y});
 }
 
 CURSOR get_cursor_input(){
@@ -277,13 +295,50 @@ void execute_command(EDITOR* editor, COMMANDS cmd){
     }
 }
 
-void render_editor(EDITOR* editor){
-    // Clear the screen
-    printf("\033[2J");
-    printf("\033[H");
+void render_editor(EDITOR* editor) {
+    // Get console info
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    GetConsoleScreenBufferInfo(editor->current_buffer, &csbi);
 
-    // Render the editor
-    for(int i = 0; i < editor->line_count; i++){
-        printf("%s\n", editor->lines[i]);
+    // Write content to the buffer that isn't currently active
+    DWORD dw_bytes_written = 0;
+    COORD cursor_pos = {0, 0};
+
+    // Clear the buffer
+    DWORD length = csbi.dwSize.X * csbi.dwSize.Y;
+    FillConsoleOutputCharacter(editor->new_buffer, ' ', length, cursor_pos, &dw_bytes_written);
+    FillConsoleOutputAttribute(editor->new_buffer, csbi.wAttributes, length, cursor_pos, &dw_bytes_written);
+
+    // Write each line to the buffer
+    for(int i = 0; i < editor->line_count; i++) {
+        cursor_pos.Y = i;
+        cursor_pos.X = 0;
+        WriteConsoleOutputCharacter(editor->new_buffer, editor->lines[i], 
+                                   strlen(editor->lines[i]), cursor_pos, &dw_bytes_written);
     }
+    
+    // Render status bar to the new buffer
+    int last_line = csbi.srWindow.Bottom;
+    COORD status_pos = {0, last_line};
+    
+    // Create status text
+    char status_text[256];
+    sprintf(status_text, " %s\t\t%s",
+            editor->state == normal ? "NORMAL" : "INSERT", editor->filename);
+    
+    // Write status text to the new buffer
+    WriteConsoleOutputCharacter(editor->new_buffer, status_text, 
+                              strlen(status_text), status_pos, &dw_bytes_written);
+
+    // Swap buffers
+    HANDLE temp = editor->current_buffer;
+    editor->current_buffer = editor->new_buffer;
+    editor->new_buffer = temp;
+
+    // Make the new buffer active
+    SetConsoleActiveScreenBuffer(editor->current_buffer);
+    
+    // Set cursor position in the active buffer
+    SetConsoleCursorPosition(editor->current_buffer, 
+                           (COORD){editor->cursor_x, editor->cursor_y});
 }
