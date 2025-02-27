@@ -51,6 +51,8 @@ CURSOR get_cursor_input();
 COMMANDS get_command_input(STATE state);
 void execute_command(EDITOR* editor, COMMANDS cmd);
 void render_editor(EDITOR* editor);
+void set_cursor_position(EDITOR* editor, int x, int y);
+
 
 
 
@@ -185,44 +187,74 @@ bool process_input(EDITOR* editor){
         if(editor->state == normal){
             // Handle vim-like movement keys
             if(ch == 'h' && editor->cursor_x > 0) {
-                editor->cursor_x--;
-            } else if(ch == 'l' ) {
-                size_t line_lenght = strlen(editor->lines[editor->cursor_y]);
-                if(editor->cursor_x < line_lenght) {
-                    editor->cursor_x++;
+                set_cursor_position(editor, editor->cursor_x - 1, editor->cursor_y);
+            } else if(ch == 'l') {
+                size_t line_length = strlen(editor->lines[editor->cursor_y]);
+                if(editor->cursor_x < line_length) {
+                    set_cursor_position(editor, editor->cursor_x + 1, editor->cursor_y);
                 }
             } else if(ch == 'k' && editor->cursor_y > 0) {
-                editor->cursor_y--;
+                set_cursor_position(editor, editor->cursor_x, editor->cursor_y - 1);
             } else if(ch == 'j' && editor->cursor_y < editor->line_count - 1) {
-                editor->cursor_y++;
+                set_cursor_position(editor, editor->cursor_x, editor->cursor_y + 1);
             } else if(ch == 'i'){
                 editor->state = insert;
             } else if(ch == ':'){
                 // Command mode
                 CONSOLE_SCREEN_BUFFER_INFO csbi;
-                GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+                GetConsoleScreenBufferInfo(editor->current_buffer, &csbi);
                 int cmd_line = csbi.srWindow.Bottom;
-
-                // Show command prompt
-                printf("\033[%d;0H:", cmd_line);
-
-                // Get command
+                
+                // Prepare command prompt in buffer
+                char prompt[3] = ":\0";
+                COORD cmd_pos = {0, cmd_line};
+                DWORD written;
+                
+                // Clear the command line
+                FillConsoleOutputCharacter(editor->current_buffer, ' ', csbi.dwSize.X, cmd_pos, &written);
+                
+                // Write the prompt
+                WriteConsoleOutputCharacter(editor->current_buffer, prompt, strlen(prompt), cmd_pos, &written);
+                
+                // Position cursor
+                SetConsoleCursorPosition(editor->current_buffer, (COORD){1, cmd_line});
+                
+                // Get command input
                 char cmd[10] = {0};
                 int i = 0;
-                while((ch = _getch()) != 13 && i < 9){
-                    putchar(ch);
-                    cmd[i++] = ch;
+                
+                // Read command chars
+                while(1){
+                    ch = _getch();
+                    if(ch == 13) break; // Enter key
+                    if(ch == 27) { // Escape key - cancel command
+                        cmd[0] = '\0';
+                        break;
+                    }
+                    if(i < 9) {
+                        cmd[i++] = ch;
+                        // Echo the character to the buffer
+                        // Create a temporary character array to hold the character
+                        char temp[2] = {ch, '\0'};  // Create a proper C string with null terminator
+                        WriteConsoleOutputCharacter(editor->current_buffer, temp, 1, 
+                                                  (COORD){i, cmd_line}, &written);
+                    }
                 }
                 cmd[i] = '\0';
-
+                
                 // Process command
-                if (strcmp(cmd, "w") == 0) execute_command(editor, cmd_save);
-                else if (strcmp(cmd, "q") == 0) execute_command(editor, cmd_exit);
-                else if (strcmp(cmd, "o") == 0) execute_command(editor, cmd_open);
-                else if (strcmp(cmd, "new") == 0) execute_command(editor, cmd_new);
+                if(strlen(cmd) > 0) {
+                    if(strcmp(cmd, "w") == 0) execute_command(editor, cmd_save);
+                    else if(strcmp(cmd, "q") == 0) execute_command(editor, cmd_exit);
+                    else if(strcmp(cmd, "o") == 0) execute_command(editor, cmd_open);
+                    else if(strcmp(cmd, "new") == 0) execute_command(editor, cmd_new);
+                }
+                
+                // Force redraw after command execution
+                input_changed = true;
             }
         } else if (editor->state == insert){
-            //In insert mode, accept typing and check for ESC to exit
+            // In insert mode, accept typing and check for ESC to exit
             if(ch == 27){ // ESC key
                 editor->state = normal;
             } else if(ch == 13){ // Enter key
@@ -230,7 +262,7 @@ bool process_input(EDITOR* editor){
                 // Move the cursor to the next line
                 
 
-            } else if( ch == 8 || ch == 127){ //bacspace key
+            } else if( ch == 8 || ch == 127){ //backspace key
                 // Only delete if we're not at the beginning of the line
                 if(editor->cursor_x > 0){
                     int col = editor->cursor_x;
@@ -242,7 +274,7 @@ bool process_input(EDITOR* editor){
                             strlen(&editor->lines[line][col]) + 1);
 
                     // Move the cursor back
-                    editor->cursor_x--;
+                    set_cursor_position(editor, col - 1, line);
                 }
                 // TODO: Handle backspace at beginning of line(join with previous line)
 
@@ -257,9 +289,9 @@ bool process_input(EDITOR* editor){
 
                 // Insert the character
                 editor->lines[line][col] = ch;
-                editor->cursor_x++;
-
-                // ? Is there more todo here?
+                
+                // Use set_cursor_position instead of directly incrementing
+                set_cursor_position(editor, col + 1, line);
             }
         }
     }
@@ -300,6 +332,10 @@ void render_editor(EDITOR* editor) {
     CONSOLE_SCREEN_BUFFER_INFO csbi;
     GetConsoleScreenBufferInfo(editor->current_buffer, &csbi);
 
+    // Store current cursor position
+    int cur_x = editor->cursor_x;
+    int cur_y = editor->cursor_y;
+
     // Write content to the buffer that isn't currently active
     DWORD dw_bytes_written = 0;
     COORD cursor_pos = {0, 0};
@@ -338,7 +374,31 @@ void render_editor(EDITOR* editor) {
     // Make the new buffer active
     SetConsoleActiveScreenBuffer(editor->current_buffer);
     
-    // Set cursor position in the active buffer
-    SetConsoleCursorPosition(editor->current_buffer, 
-                           (COORD){editor->cursor_x, editor->cursor_y});
+    // Restore cursor position after buffer swap
+    SetConsoleCursorPosition(editor->current_buffer, (COORD){cur_x, cur_y});
+}
+
+void set_cursor_position(EDITOR* editor, int x, int y) {
+    // Ensure we don't go beyond valid boundaries
+    if (y >= editor->line_count) {
+        y = editor->line_count - 1;
+    }
+    if (y < 0) {
+        y = 0;
+    }
+    
+    // Limit x position to line length if needed
+    int line_length = strlen(editor->lines[y]);
+    if (x > line_length) {
+        x = line_length;
+    }
+    if (x < 0) {
+        x = 0;
+    }
+    
+    editor->cursor_x = x;
+    editor->cursor_y = y;
+    
+    // Update the active console cursor immediately
+    SetConsoleCursorPosition(editor->current_buffer, (COORD){x, y});
 }
