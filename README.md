@@ -46,7 +46,7 @@ TWP Editor is a lightweight, Vim-like text editor for the Windows terminal. It o
     Or manually compile with GCC:
 
     ```bash
-    gcc src/*.c -o twp_editor.exe
+    gcc src/*.c -o twp.exe
     ```
 
 ## Usage
@@ -56,13 +56,13 @@ TWP Editor is a lightweight, Vim-like text editor for the Windows terminal. It o
 * Launch without arguments to show the startup menu:
 
     ```bash
-    twp_editor.exe
+    twp.exe
     ```
 
 * Open a file directly:
 
     ```bash
-    twp_editor.exe path/to/your/file.txt
+    twp.exe path/to/your/file.txt
     ```
 
 ### Keyboard Controls
