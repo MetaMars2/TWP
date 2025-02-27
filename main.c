@@ -103,13 +103,20 @@ void init_editor(EDITOR* editor) {
 void render_status_bar(EDITOR* editor, STATE STATE) {
     
     CONSOLE_SCREEN_BUFFER_INFO csbi;
-    int lastline;
     GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
-    lastline = csbi.srWindow.Bottom;
-    // Output: NORMAL/INSERT        filename
-    printf("\033[%d;0H %s\t\t%s", lastline, STATE == normal ? "NORMAL" : "INSERT", editor->filename);
-    // Move the cursor to the previous position
+    int last_line = csbi.srWindow.Bottom;
+    
+    // Clear the entire status line first
+    printf("\033[%d;0H\033[K", last_line);
+
+    // Then print the status information
+    printf("\033[%d;0H %s\t\t%s", last_line,
+            STATE == normal ? "NORMAL" : "INSERT", editor->filename);
+
+    // Move cursor back to editing position
     printf("\033[%d;%dH", editor->cursor_y + 1, editor->cursor_x + 1);
+
+    fflush(stdout);
 }
 
 CURSOR get_cursor_input(){
@@ -154,59 +161,70 @@ bool process_input(EDITOR* editor){
     bool input_changed = false;
 
     if(_kbhit()){
+        int ch = _getch();
         input_changed = true;
 
         if(editor->state == normal){
-            // In normal mode, chech for both cursor movements and commands
-            CURSOR cursor = get_cursor_input();
-            if(cursor != -1){
-                // Handle cursor movement
-                switch(cursor){
-                    case cur_left: if(editor->cursor_x > 0) editor->cursor_x--; break;
-                    case cur_right: {
-                        size_t last_ch_index = strlen(editor->lines[editor->cursor_y]);
-                        if(editor->cursor_x < last_ch_index) editor->cursor_x++; 
-                        else if(editor->cursor_y < editor->line_count) {
-                            editor->cursor_x = 0;
-                            editor->cursor_y++;
-                        } 
-                        break;
-                    }
-                    case cur_up: if(editor->cursor_y > 0) editor->cursor_y--; break;
-                    case cur_down: if(editor->cursor_y < editor->line_count-1) editor->cursor_y++; break;
+            // Handle vim-like movement keys
+            if(ch == 'h' && editor->cursor_x > 0) {
+                editor->cursor_x--;
+            } else if(ch == 'l' ) {
+                size_t line_lenght = strlen(editor->lines[editor->cursor_y]);
+                if(editor->cursor_x < line_lenght) {
+                    editor->cursor_x++;
                 }
-            } else {
-                // Check for mode change to insert
-                int ch = _getch();
-                if(ch == 'i'){
-                    editor->state = insert;
-                } else if(ch == ':'){
-                    // Display the colon first
-                    printf(":");
+            } else if(ch == 'k' && editor->cursor_y > 0) {
+                editor->cursor_y--;
+            } else if(ch == 'j' && editor->cursor_y < editor->line_count - 1) {
+                editor->cursor_y++;
+            } else if(ch == 'i'){
+                editor->state = insert;
+            } else if(ch == ':'){
+                // Command mode
+                CONSOLE_SCREEN_BUFFER_INFO csbi;
+                GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+                int cmd_line = csbi.srWindow.Bottom;
 
-                    // Get the command string
-                    char cmd[10] = {0};
-                    int i = 0;
-                    
-                    while((ch = _getch()) != 13 && i < 9){ // Read until Enter
-                        putchar(ch);
-                        cmd[i++] = ch;
-                    }
-                    cmd[i] = '\0';
+                // Show command prompt
+                printf("\033[%d;0H:", cmd_line);
 
-                    if(strcmp(cmd, "w") == 0) execute_command(editor, cmd_save);
-                    if(strcmp(cmd, "q") == 0) execute_command(editor, cmd_exit);
-                    if(strcmp(cmd, "o") == 0) execute_command(editor, cmd_open);
-                    if(strcmp(cmd, "new") == 0) execute_command(editor, cmd_new);
+                // Get command
+                char cmd[10] = {0};
+                int i = 0;
+                while((ch = _getch()) != 13 && i < 9){
+                    putchar(ch);
+                    cmd[i++] = ch;
                 }
+                cmd[i] = '\0';
+
+                // Process command
+                if (strcmp(cmd, "w") == 0) execute_command(editor, cmd_save);
+                else if (strcmp(cmd, "q") == 0) execute_command(editor, cmd_exit);
+                else if (strcmp(cmd, "o") == 0) execute_command(editor, cmd_open);
+                else if (strcmp(cmd, "new") == 0) execute_command(editor, cmd_new);
             }
         } else if (editor->state == insert){
             //In insert mode, accept typing and check for ESC to exit
-            int ch = _getch();
             if(ch == 27){ // ESC key
                 editor->state = normal;
-            } else {
-                // TODO: Handle typing insertion
+            } else if(ch == 13){ // Enter key
+                // TODO: Handle new line insertion
+                // Move the cursor to the next line
+
+            } else { 
+                int col = editor->cursor_x;
+                int line = editor->cursor_y;
+
+                // Shift characters at curent position
+                memmove(&editor->lines[line][col + 1],
+                        &editor->lines[line][col],
+                        strlen(&editor->lines[line][col]) + 1);
+
+                // Insert the character
+                editor->lines[line][col] = ch;
+                editor->cursor_x++;
+
+                // ? Is there more todo here?
             }
         }
     }
