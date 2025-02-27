@@ -66,8 +66,11 @@ int main(int argc, char* argv[]) {
     }
 
 
-    printf("\033[2J"); // Clear the screen
-    printf("\033[H"); // Move the cursor to the top left corner
+    // Clear the screen
+    system("cls");
+
+    // Move the cursor to the top left corner
+    SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), (COORD){0, 0});
 
     EDITOR editor;
     init_editor(&editor);
