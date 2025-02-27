@@ -38,7 +38,8 @@ typedef struct _editor {
     int cursor_x; 
     int cursor_y; 
     STATE state; // Current state of the editor
-    char filename[FILENAME_MAX];
+    char filename[FILENAME_MAX]; // Just the filename for display
+    char filepath[FILENAME_MAX]; // Full path for file operations
     bool is_saved;
     HANDLE current_buffer; // active buffer
     HANDLE new_buffer; // new buffer
@@ -81,21 +82,25 @@ void init_editor(EDITOR* editor) {
     editor->cursor_y = 0;
     editor->state = normal;
     
-    // Initialize filename
-    if (editor->filename[0] == '\0') {
+    // Initialize filepath/filename
+    if (editor->filepath[0] == '\0') {
+        strcpy(editor->filepath, "untitled.txt");
         strcpy(editor->filename, "untitled.txt");
     } else {
-        // Extract filename from path if needed
-        char* filename_part = strrchr(editor->filename, '\\');
+        // Keep the full filepath for file operations
+        // Extract just the filename for display
+        char* filename_part = strrchr(editor->filepath, '\\');
         if (filename_part) {
-            // If we found a backslash, use the part after it
+            // If we found a backslash, use the part after it as display name
             strcpy(editor->filename, filename_part + 1);
+        } else {
+            // No path separator, so use the whole thing as both path and name
+            strcpy(editor->filename, editor->filepath);
         }
-        // Otherwise keep the original name (it's just a filename)
     }
     
     // Check if file exists to determine save status
-    FILE* file = fopen(editor->filename, "r");
+    FILE* file = fopen(editor->filepath, "r");
     if (file) {
         // File exists - compare with current contents to determine save status
         char file_contents[MAX_LINES][MAX_COLUMNS];
@@ -381,8 +386,8 @@ void execute_command(EDITOR* editor, COMMANDS cmd){
             // Clear the message line first
             FillConsoleOutputCharacter(editor->current_buffer, ' ', csbi.dwSize.X, msg_pos, &written);
             
-            // Try to save the file
-            FILE* file = fopen(editor->filename, "w");
+            // Try to save the file - use filepath for file operations
+            FILE* file = fopen(editor->filepath, "w");
             if (file) {
                 // Write each line to the file
                 for (int i = 0; i < editor->line_count; i++) {
@@ -401,6 +406,7 @@ void execute_command(EDITOR* editor, COMMANDS cmd){
                 sprintf(message, "Error: Couldn't save file (%s)", strerror(errno));
             }
             
+            // Rest remains the same
             // Write the message to the buffer
             WriteConsoleOutputCharacter(editor->current_buffer, message, strlen(message), 
                                       msg_pos, &written);
@@ -418,19 +424,204 @@ void execute_command(EDITOR* editor, COMMANDS cmd){
             SetConsoleCursorPosition(editor->current_buffer, old_pos);
             break;
         }
-        // Other cases remain the same
         case cmd_exit:
-            if(editor->is_saved){ // TODO: confirm_exit() needs to be implemented
-                exit(0);
+            if(!editor->is_saved) {
+                // Prompt user to confirm exit with unsaved changes
+                CONSOLE_SCREEN_BUFFER_INFO csbi;
+                GetConsoleScreenBufferInfo(editor->current_buffer, &csbi);
+                int msgline = csbi.srWindow.Bottom - 1;
+                
+                char message[] = "Unsaved changes! Press 'y' to exit anyway, any other key to cancel";
+                COORD msg_pos = {0, msgline};
+                DWORD written;
+                
+                // Clear the message line first
+                FillConsoleOutputCharacter(editor->current_buffer, ' ', csbi.dwSize.X, msg_pos, &written);
+                
+                // Write the confirmation message
+                WriteConsoleOutputCharacter(editor->current_buffer, message, strlen(message), 
+                                          msg_pos, &written);
+                
+                // Get user input
+                int ch = _getch();
+                
+                // Clear the message
+                FillConsoleOutputCharacter(editor->current_buffer, ' ', csbi.dwSize.X, msg_pos, &written);
+                
+                if(ch != 'y' && ch != 'Y') {
+                    // User canceled exit
+                    break;
+                }
             }
+            // Exit the program
             exit(0);
             break;
-        case cmd_open:
-            // TODO: Open file implementation
+
+        case cmd_open: {
+            // Check for unsaved changes first
+            if(!editor->is_saved) {
+                CONSOLE_SCREEN_BUFFER_INFO csbi;
+                GetConsoleScreenBufferInfo(editor->current_buffer, &csbi);
+                int msgline = csbi.srWindow.Bottom - 1;
+                
+                char message[] = "Unsaved changes! Press 'y' to continue, any other key to cancel";
+                COORD msg_pos = {0, msgline};
+                DWORD written;
+                
+                // Clear the message line first
+                FillConsoleOutputCharacter(editor->current_buffer, ' ', csbi.dwSize.X, msg_pos, &written);
+                
+                // Write the confirmation message
+                WriteConsoleOutputCharacter(editor->current_buffer, message, strlen(message), 
+                                          msg_pos, &written);
+                
+                // Get user input
+                int ch = _getch();
+                
+                // Clear the message
+                FillConsoleOutputCharacter(editor->current_buffer, ' ', csbi.dwSize.X, msg_pos, &written);
+                
+                if(ch != 'y' && ch != 'Y') {
+                    // User canceled open
+                    break;
+                }
+            }
+            
+            // Prompt for filename to open
+            CONSOLE_SCREEN_BUFFER_INFO csbi;
+            GetConsoleScreenBufferInfo(editor->current_buffer, &csbi);
+            int msgline = csbi.srWindow.Bottom - 1;
+            
+            char prompt[] = "Enter full path to open: ";
+            COORD msg_pos = {0, msgline};
+            DWORD written;
+            
+            // Clear the message line first
+            FillConsoleOutputCharacter(editor->current_buffer, ' ', csbi.dwSize.X, msg_pos, &written);
+            
+            // Write the prompt
+            WriteConsoleOutputCharacter(editor->current_buffer, prompt, strlen(prompt), 
+                                      msg_pos, &written);
+            
+            // Position cursor at end of prompt
+            SetConsoleCursorPosition(editor->current_buffer, (COORD){strlen(prompt), msgline});
+            
+            // Get filename input
+            char filepath[FILENAME_MAX] = {0};
+            int i = 0;
+            int ch;
+            while(1) {
+                ch = _getch();
+                if(ch == 13) break; // Enter key
+                if(ch == 27) { // Escape key - cancel
+                    filepath[0] = '\0';
+                    break;
+                }
+                if(i < FILENAME_MAX - 1 && ch >= 32 && ch <= 126) { // Printable ASCII
+                    filepath[i++] = ch;
+                    // Replace putchar with proper console output
+                    char temp[2] = {ch, '\0'};
+                    COORD char_pos = {strlen(prompt) + i - 1, msgline};
+                    WriteConsoleOutputCharacter(editor->current_buffer, temp, 1, char_pos, &written);
+                }
+            }
+            filepath[i] = '\0';
+            
+            // Clear the message line
+            FillConsoleOutputCharacter(editor->current_buffer, ' ', csbi.dwSize.X, msg_pos, &written);
+            
+            // Check if user entered a filename
+            if(filepath[0] != '\0') {
+                // Close current editor and open the new file
+                open_create_file(filepath, open);
+                // This will start a new editor instance
+                exit(0); // Exit the current editor instance
+            }
             break;
-        case cmd_new:
-            // TODO: New file implementation
+        }
+
+        case cmd_new: {
+            // Check for unsaved changes first
+            if(!editor->is_saved) {
+                CONSOLE_SCREEN_BUFFER_INFO csbi;
+                GetConsoleScreenBufferInfo(editor->current_buffer, &csbi);
+                int msgline = csbi.srWindow.Bottom - 1;
+                
+                char message[] = "Unsaved changes! Press 'y' to continue, any other key to cancel";
+                COORD msg_pos = {0, msgline};
+                DWORD written;
+                
+                // Clear the message line first
+                FillConsoleOutputCharacter(editor->current_buffer, ' ', csbi.dwSize.X, msg_pos, &written);
+                
+                // Write the confirmation message
+                WriteConsoleOutputCharacter(editor->current_buffer, message, strlen(message), 
+                                          msg_pos, &written);
+                
+                // Get user input
+                int ch = _getch();
+                
+                // Clear the message
+                FillConsoleOutputCharacter(editor->current_buffer, ' ', csbi.dwSize.X, msg_pos, &written);
+                
+                if(ch != 'y' && ch != 'Y') {
+                    // User canceled new file
+                    break;
+                }
+            }
+            
+            // Prompt for new filename
+            CONSOLE_SCREEN_BUFFER_INFO csbi;
+            GetConsoleScreenBufferInfo(editor->current_buffer, &csbi);
+            int msgline = csbi.srWindow.Bottom - 1;
+            
+            char prompt[] = "Enter path for new file (or Enter for default): ";
+            COORD msg_pos = {0, msgline};
+            DWORD written;
+            
+            // Clear the message line first
+            FillConsoleOutputCharacter(editor->current_buffer, ' ', csbi.dwSize.X, msg_pos, &written);
+            
+            // Write the prompt
+            WriteConsoleOutputCharacter(editor->current_buffer, prompt, strlen(prompt), 
+                                      msg_pos, &written);
+            
+            // Position cursor at end of prompt
+            SetConsoleCursorPosition(editor->current_buffer, (COORD){strlen(prompt), msgline});
+            
+            // Get filename input
+            char filepath[FILENAME_MAX] = {0};
+            int i = 0;
+            int ch;
+            while(1) {
+                ch = _getch();
+                if(ch == 13) break; // Enter key
+                if(ch == 27) { // Escape key - cancel
+                    filepath[0] = '\0';
+                    break;
+                }
+                if(i < FILENAME_MAX - 1 && ch >= 32 && ch <= 126) { // Printable ASCII
+                    filepath[i++] = ch;
+                    // Replace putchar with proper console output
+                    char temp[2] = {ch, '\0'};
+                    COORD char_pos = {strlen(prompt) + i - 1, msgline};
+                    WriteConsoleOutputCharacter(editor->current_buffer, temp, 1, char_pos, &written);
+                }
+            }
+            filepath[i] = '\0';
+            
+            // Clear the message line
+            FillConsoleOutputCharacter(editor->current_buffer, ' ', csbi.dwSize.X, msg_pos, &written);
+            
+            // Check if user canceled (ESC)
+            if(ch != 27) {
+                // Create a new file (empty or with custom name)
+                open_create_file(filepath[0] != '\0' ? filepath : NULL, open);
+                // This will start a new editor instance
+                exit(0); // Exit the current editor instance
+            }
             break;
+        }
     }
 }
 
@@ -595,7 +786,7 @@ void show_startup_menu(){
             case 'n': { // new file
                 system("cls");
                 SetConsoleCursorPosition(console, (COORD){0, 0});
-                printf("Enter name for new file: ");
+                printf("Enter path for new file (can include directories): ");
                 
                 char filepath[FILENAME_MAX] = {0};
                 // Use fgets instead of scanf to handle empty input (just pressing Enter)
@@ -620,7 +811,7 @@ void show_startup_menu(){
             case 'o': { // Open file
                 system("cls");
                 SetConsoleCursorPosition(console, (COORD){0, 0});
-                printf("Enter filepath to open: ");
+                printf("Enter full path to file: ");
                 
                 char filepath[FILENAME_MAX] = {0};
                 scanf("%s", filepath);
@@ -638,7 +829,7 @@ void show_startup_menu(){
     }
 }
 
-void open_create_file(char* filename, SAVE_OPEN_MODE mode){
+void open_create_file(char* filepath, SAVE_OPEN_MODE mode){
     // Clear the screen
     system("cls");
     
@@ -650,11 +841,19 @@ void open_create_file(char* filename, SAVE_OPEN_MODE mode){
     
     // Create new editor
     EDITOR editor;
+    memset(&editor, 0, sizeof(EDITOR)); // Initialize all to zero first
+    
+    // Store the filepath if provided
+    if (filepath && strlen(filepath) > 0) {
+        strcpy(editor.filepath, filepath);
+    }
+    
+    // Initialize editor (this will now handle filename extraction)
     init_editor(&editor);
     
-    // If filename was provided and not NULL, try to load it
-    if (filename && strlen(filename) > 0) {
-        FILE* file = fopen(filename, "r");
+    // If filepath was provided, try to load it
+    if (filepath && strlen(filepath) > 0) {
+        FILE* file = fopen(filepath, "r");
         if (file) {
             // Load file content into editor
             int line = 0;
@@ -669,22 +868,13 @@ void open_create_file(char* filename, SAVE_OPEN_MODE mode){
             editor.line_count = line > 0 ? line : 1;
             fclose(file);
             
-            // Set filename
-            strcpy(editor.filename, filename);
             editor.is_saved = true;
         } else {
             // New file with given name
-            strcpy(editor.filename, filename);
             editor.is_saved = false;
             editor.line_count = 1;
             editor.lines[0][0] = '\0';
         }
-    } else {
-        // New file with default name
-        strcpy(editor.filename, "untitled.txt");
-        editor.is_saved = false;
-        editor.line_count = 1;
-        editor.lines[0][0] = '\0';
     }
     
     // Start editor loop
