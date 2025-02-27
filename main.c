@@ -252,6 +252,36 @@ bool process_input(EDITOR* editor){
             // In insert mode, accept typing and check for ESC to exit
             if(ch == 27){ // ESC key
                 editor->state = normal;
+            } else if(ch == 0 || ch == 224) { // Special key sequence (arrow keys)
+                // Get the second byte of the sequence
+                ch = _getch();
+                
+                // Handle arrow keys in insert mode
+                switch(ch) {
+                    case 72: // Up arrow
+                        if(editor->cursor_y > 0) {
+                            set_cursor_position(editor, editor->cursor_x, editor->cursor_y - 1);
+                        }
+                        break;
+                        
+                    case 80: // Down arrow
+                        if(editor->cursor_y < editor->line_count - 1) {
+                            set_cursor_position(editor, editor->cursor_x, editor->cursor_y + 1);
+                        }
+                        break;
+                        
+                    case 75: // Left arrow
+                        if(editor->cursor_x > 0) {
+                            set_cursor_position(editor, editor->cursor_x - 1, editor->cursor_y);
+                        }
+                        break;
+                        
+                    case 77: // Right arrow
+                        if(editor->cursor_x < strlen(editor->lines[editor->cursor_y])) {
+                            set_cursor_position(editor, editor->cursor_x + 1, editor->cursor_y);
+                        }
+                        break;
+                }
             } else if(ch == 13){ // Enter key
                 // Move the cursor to the next line
                 int cur_line = editor->cursor_y;
@@ -288,7 +318,31 @@ bool process_input(EDITOR* editor){
                     // Move the cursor back
                     set_cursor_position(editor, col - 1, line);
                 }
-                // TODO: Handle backspace at beginning of line(join with previous line)
+                // Handle backspace at beginning of line (join with previous line)
+                else if(editor->cursor_y > 0){ // Beginning of a line (but not the first line)
+                    int cur_line = editor->cursor_y;
+                    int prev_line = cur_line - 1;
+
+                    // Calculate the new cursor position (end of previous line)
+                    int new_cursor_x = strlen(editor->lines[prev_line]);
+
+                    // Append the current line to the previous line
+                    strcat(editor->lines[prev_line], editor->lines[cur_line]);
+
+                    // Shift all subsequent lines up to fill the gap
+                    for (int i = cur_line; i < editor->line_count - 1; i++) {
+                        strcpy(editor->lines[i], editor->lines[i + 1]);
+                    }
+
+                    // Clear the last line
+                    editor->lines[editor->line_count - 1][0] = '\0';
+
+                    // Decrease the line count
+                    editor->line_count--;
+
+                    // Move the cursor to the join position
+                    set_cursor_position(editor, new_cursor_x, prev_line);
+                }
 
             } else { 
                 int col = editor->cursor_x;
