@@ -5,10 +5,10 @@ OBJS = $(SRCS:.c=.o)
 TARGET = twp
 
 $(TARGET): $(OBJS)
-    $(CC) -o $@ $^
+	$(CC) -o $@ $^
 
 %.o: %.c
-    $(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-    rm -f $(OBJS) $(TARGET)
+	rm -f $(OBJS) $(TARGET)
