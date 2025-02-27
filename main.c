@@ -210,6 +210,7 @@ bool process_input(EDITOR* editor){
             } else if(ch == 13){ // Enter key
                 // TODO: Handle new line insertion
                 // Move the cursor to the next line
+                
 
             } else if( ch == 8 || ch == 127){ //bacspace key
                 // Only delete if we're not at the beginning of the line
@@ -225,6 +226,7 @@ bool process_input(EDITOR* editor){
                     // Move the cursor back
                     editor->cursor_x--;
                 }
+                // TODO: Handle backspace at beginning of line(join with previous line)
 
             } else { 
                 int col = editor->cursor_x;
