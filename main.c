@@ -44,67 +44,97 @@ typedef struct _editor {
     HANDLE new_buffer; // new buffer
 } EDITOR;
 
+typedef enum _save_open_mode{
+    save,
+    open
+} SAVE_OPEN_MODE;
+
 void init_editor(EDITOR* editor);
 
 bool process_input(EDITOR* editor);
-CURSOR get_cursor_input();
-COMMANDS get_command_input(STATE state);
 void execute_command(EDITOR* editor, COMMANDS cmd);
 void render_editor(EDITOR* editor);
 void set_cursor_position(EDITOR* editor, int x, int y);
+void show_startup_menu();
+void open_create_file(char* filename, SAVE_OPEN_MODE mode);
+
 
 
 
 
 int main(int argc, char* argv[]) {
-
-
-    if(argc <= 1){
-        // TODO: show_startup_menu();
+    if (argc <= 1) {
+        show_startup_menu();
     } else {
-        // TODO: open_create_file(argv[1]);
+        open_create_file(argv[1], open);
     }
-
-
-    // Clear the screen
-    system("cls");
-
-    // Move the cursor to the top left corner
-    SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), (COORD){0, 0});
-
-    EDITOR editor;
-    init_editor(&editor);
-
-    render_editor(&editor);
-
-    bool needs_redraw = false;
-
-    while(true){
-        // Process input first
-        needs_redraw = process_input(&editor);
-        
-        // Only redraw if something changed
-        if(needs_redraw){
-            render_editor(&editor);
-        }
-
-        // Longer sleep to reduce CPU usage and flickering
-        Sleep(50);
-    }
-
+    
     return 0;
 }
 
 void init_editor(EDITOR* editor) {
+    // Initialize basic buffers
+    memset(editor->lines, 0, sizeof(editor->lines));
     editor->lines[0][0] = '\0';
     editor->line_count = 1;
     editor->cursor_x = 0;
     editor->cursor_y = 0;
     editor->state = normal;
-    strcpy(editor->filename, "meow.txt"); // TODO: Set the filename
-    editor->is_saved = true; // TODO: Check if the file is saved
+    
+    // Initialize filename
+    if (editor->filename[0] == '\0') {
+        strcpy(editor->filename, "untitled.txt");
+    } else {
+        // Extract filename from path if needed
+        char* filename_part = strrchr(editor->filename, '\\');
+        if (filename_part) {
+            // If we found a backslash, use the part after it
+            strcpy(editor->filename, filename_part + 1);
+        }
+        // Otherwise keep the original name (it's just a filename)
+    }
+    
+    // Check if file exists to determine save status
+    FILE* file = fopen(editor->filename, "r");
+    if (file) {
+        // File exists - compare with current contents to determine save status
+        char file_contents[MAX_LINES][MAX_COLUMNS];
+        int line_count = 0;
+        
+        while (line_count < MAX_LINES && fgets(file_contents[line_count], MAX_COLUMNS, file)) {
+            // Remove trailing newline
+            size_t len = strlen(file_contents[line_count]);
+            if (len > 0 && file_contents[line_count][len-1] == '\n') {
+                file_contents[line_count][len-1] = '\0';
+            }
+            line_count++;
+        }
+        fclose(file);
+        
+        // If there's content in the editor, compare with file contents
+        if (editor->line_count > 1 || strlen(editor->lines[0]) > 0) {
+            editor->is_saved = false; // Assume not saved unless proven otherwise
+            
+            // Only mark as saved if line count matches and all lines are identical
+            if (line_count == editor->line_count) {
+                editor->is_saved = true;
+                for (int i = 0; i < line_count; i++) {
+                    if (strcmp(editor->lines[i], file_contents[i]) != 0) {
+                        editor->is_saved = false;
+                        break;
+                    }
+                }
+            }
+        } else {
+            // Empty editor opening existing file - it's considered saved
+            editor->is_saved = true;
+        }
+    } else {
+        // File doesn't exist - editor is considered unsaved if it has content
+        editor->is_saved = (editor->line_count == 1 && editor->lines[0][0] == '\0');
+    }
 
-    // Screen buffer
+    // Screen buffer initialization
     editor->current_buffer = GetStdHandle(STD_OUTPUT_HANDLE);
     editor->new_buffer = CreateConsoleScreenBuffer(
         GENERIC_READ | GENERIC_WRITE,
@@ -113,46 +143,17 @@ void init_editor(EDITOR* editor) {
         CONSOLE_TEXTMODE_BUFFER,
         NULL
     );
-}
-
-
-
-CURSOR get_cursor_input(){
-    int ch = _getch();
-
-    switch(ch){
-        case 'h': return cur_left;
-        case 'j': return cur_down;
-        case 'k': return cur_up;
-        case 'l': return cur_right;
-        case 13:  return cur_enter; // Enter key
-        case 8:   return cur_backspace; // Backspace key
-        default:  return -1; // Not a cursor movement
-    }
-
-}
-
-COMMANDS get_command_input(STATE state){
-    // In normal mode, comands are often prefixed with ':'
-    if(state == normal){
-        int ch = _getch();
-        if(ch == ':'){
-            char cmd [10] = {0};
-            int i = 0;
-
-            while((ch = _getch()) != 13 && i < 9){ // Read until Enter
-                putchar(ch);
-                cmd[i++] = ch;
-            }
-            cmd[i] = '\0';
-
-            if(strcmp(cmd, "w") == 0) return cmd_save;
-            if(strcmp(cmd, "q") == 0) return cmd_exit;
-            if(strcmp(cmd, "o") == 0) return cmd_open;
-            if(strcmp(cmd, "new") == 0) return cmd_new;
-        }
-    }
-    return -1;
+    
+    // Set console mode for the buffers
+    DWORD mode;
+    GetConsoleMode(editor->current_buffer, &mode);
+    SetConsoleMode(editor->current_buffer, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+    SetConsoleMode(editor->new_buffer, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+    
+    // Configure cursor appearance
+    CONSOLE_CURSOR_INFO cursor_info = {100, TRUE}; // Size 100%, visible
+    SetConsoleCursorInfo(editor->current_buffer, &cursor_info);
+    SetConsoleCursorInfo(editor->new_buffer, &cursor_info);
 }
 
 bool process_input(EDITOR* editor){
@@ -372,19 +373,37 @@ void execute_command(EDITOR* editor, COMMANDS cmd){
             GetConsoleScreenBufferInfo(editor->current_buffer, &csbi);
             int msgline = csbi.srWindow.Bottom - 1;
             
-            // Prepare message
-            char message[] = "File saved successfully";
+            // Prepare message buffer
+            char message[256];
             COORD msg_pos = {0, msgline};
             DWORD written;
             
             // Clear the message line first
             FillConsoleOutputCharacter(editor->current_buffer, ' ', csbi.dwSize.X, msg_pos, &written);
             
+            // Try to save the file
+            FILE* file = fopen(editor->filename, "w");
+            if (file) {
+                // Write each line to the file
+                for (int i = 0; i < editor->line_count; i++) {
+                    fputs(editor->lines[i], file);
+                    if (i < editor->line_count - 1) {
+                        fputc('\n', file); // Add newline between lines (not after last line)
+                    }
+                }
+                fclose(file);
+                
+                // Mark as saved
+                editor->is_saved = true;
+                strcpy(message, "File saved successfully");
+            } else {
+                // Handle error - couldn't open file for writing
+                sprintf(message, "Error: Couldn't save file (%s)", strerror(errno));
+            }
+            
             // Write the message to the buffer
             WriteConsoleOutputCharacter(editor->current_buffer, message, strlen(message), 
                                       msg_pos, &written);
-            
-            editor->is_saved = true;
             
             // Save cursor position
             COORD old_pos = {editor->cursor_x, editor->cursor_y};
@@ -399,6 +418,7 @@ void execute_command(EDITOR* editor, COMMANDS cmd){
             SetConsoleCursorPosition(editor->current_buffer, old_pos);
             break;
         }
+        // Other cases remain the same
         case cmd_exit:
             if(editor->is_saved){ // TODO: confirm_exit() needs to be implemented
                 exit(0);
@@ -488,4 +508,194 @@ void set_cursor_position(EDITOR* editor, int x, int y) {
     
     // Update the active console cursor immediately
     SetConsoleCursorPosition(editor->current_buffer, (COORD){x, y});
+}
+
+void show_startup_menu(){
+    // Set console to UTF-8 mode and proper font
+    SetConsoleOutputCP(65001);
+    
+    HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    GetConsoleScreenBufferInfo(console, &csbi);
+    int width = csbi.dwSize.X;
+    int height = csbi.dwSize.Y;
+
+    system("cls");
+    SetConsoleCursorPosition(console, (COORD){0, 0});
+
+    // Calculate center position for text
+    int start_y = height / 4;
+
+    // Use the commented out header since it's shorter and more likely to display correctly
+    const char* header[] = {
+        "  ████████╗██╗    ██╗██████╗     ███████╗██████╗ ██╗████████╗ ██████╗ ██████╗ ",
+        "  ╚══██╔══╝██║    ██║██╔══██╗    ██╔════╝██╔══██╗██║╚══██╔══╝██╔═══██╗██╔══██╗",
+        "     ██║   ██║ █╗ ██║██████╔╝    █████╗  ██║  ██║██║   ██║   ██║   ██║██████╔╝",
+        "     ██║   ██║███╗██║██╔═══╝     ██╔══╝  ██║  ██║██║   ██║   ██║   ██║██╔══██╗",
+        "     ██║   ╚███╔███╔╝██║         ███████╗██████╔╝██║   ██║   ╚██████╔╝██║  ██║",
+        "     ╚═╝     ╚═╝ ╚═╝ ╚═╝         ╚══════╝╚═════╝ ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝"
+    };
+
+    int header_lines = sizeof(header) / sizeof(header[0]);
+
+    // Print header centered - fixed method for UTF-8
+    for(int i = 0; i < header_lines; i++){
+        // Use a fixed display width - each line is the same width
+        int text_len = 78; // Hardcoded width of the ASCII art
+        int start_x = (width - text_len) / 2;
+        if(start_x < 0) start_x = 0; // Prevent negative position
+        
+        SetConsoleCursorPosition(console, (COORD){start_x, start_y + i});
+        
+        // Write to console output directly for better control
+        DWORD written;
+        WriteConsoleA(console, header[i], strlen(header[i]), &written, NULL);
+    }
+
+    // Version info
+    const char* version = "Version 0.1";
+    SetConsoleCursorPosition(console, (COORD){(width - strlen(version)) / 2, start_y + header_lines + 1});
+    printf("%s", version);
+
+    // Subtitle
+    const char* subtitle = "A Vim-like Terminal Text Editor";
+    SetConsoleCursorPosition(console, (COORD){(width - strlen(subtitle)) / 2, start_y + header_lines + 2});
+    printf("%s", subtitle);
+
+    // Menu options
+    const char* menu[] = {
+        "",
+        "  New File       [n]",
+        "  Open File      [o]",
+        "  Exit           [q]",
+        "",
+        "  Help           [h]",
+        ""
+    };
+
+    int menu_items = sizeof(menu) / sizeof(menu[0]);
+
+    // Print menu 
+    for(int i = 0; i < menu_items; i++){
+        int text_len = strlen(menu[i]);
+        int start_x = (width - text_len) / 2;
+        SetConsoleCursorPosition(console, (COORD){start_x, start_y + header_lines + 4 + i});
+        printf("%s", menu[i]);
+    }
+
+    // Footer
+    const char* footer = "TWP Editor by David Radoslav";
+    SetConsoleCursorPosition(console, (COORD){(width - strlen(footer)) / 2, start_y + header_lines + 4 + menu_items + 2});
+    printf("%s", footer);
+
+    // Handle input
+    while(true){
+        int ch = _getch();
+        switch(ch){
+            case 'n': { // new file
+                system("cls");
+                SetConsoleCursorPosition(console, (COORD){0, 0});
+                printf("Enter name for new file: ");
+                
+                char filepath[FILENAME_MAX] = {0};
+                // Use fgets instead of scanf to handle empty input (just pressing Enter)
+                fflush(stdin);
+                fgets(filepath, FILENAME_MAX, stdin);
+                
+                // Remove trailing newline if present
+                size_t len = strlen(filepath);
+                if (len > 0 && filepath[len-1] == '\n') {
+                    filepath[len-1] = '\0';
+                    len--;
+                }
+                
+                // If the user entered a filename, use it; otherwise pass NULL for default
+                if (len > 0) {
+                    open_create_file(filepath, open);
+                } else {
+                    open_create_file(NULL, open);
+                }
+                return;
+            }
+            case 'o': { // Open file
+                system("cls");
+                SetConsoleCursorPosition(console, (COORD){0, 0});
+                printf("Enter filepath to open: ");
+                
+                char filepath[FILENAME_MAX] = {0};
+                scanf("%s", filepath);
+                open_create_file(filepath, open);
+                return;
+            }
+            case 'h': // Help
+                system("cls");
+                SetConsoleCursorPosition(console, (COORD){0, 0}); // TODO: Implement help docs
+                printf("Help not implemented yet\n");
+                break;
+            case 'q': // Quit
+                exit(0);
+        }
+    }
+}
+
+void open_create_file(char* filename, SAVE_OPEN_MODE mode){
+    // Clear the screen
+    system("cls");
+    
+    // Get console handle
+    HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
+    
+    // Move cursor to top left
+    SetConsoleCursorPosition(console, (COORD){0, 0});
+    
+    // Create new editor
+    EDITOR editor;
+    init_editor(&editor);
+    
+    // If filename was provided and not NULL, try to load it
+    if (filename && strlen(filename) > 0) {
+        FILE* file = fopen(filename, "r");
+        if (file) {
+            // Load file content into editor
+            int line = 0;
+            while (line < MAX_LINES && fgets(editor.lines[line], MAX_COLUMNS, file)) {
+                // Remove trailing newline if present
+                size_t len = strlen(editor.lines[line]);
+                if (len > 0 && editor.lines[line][len-1] == '\n') {
+                    editor.lines[line][len-1] = '\0';
+                }
+                line++;
+            }
+            editor.line_count = line > 0 ? line : 1;
+            fclose(file);
+            
+            // Set filename
+            strcpy(editor.filename, filename);
+            editor.is_saved = true;
+        } else {
+            // New file with given name
+            strcpy(editor.filename, filename);
+            editor.is_saved = false;
+            editor.line_count = 1;
+            editor.lines[0][0] = '\0';
+        }
+    } else {
+        // New file with default name
+        strcpy(editor.filename, "untitled.txt");
+        editor.is_saved = false;
+        editor.line_count = 1;
+        editor.lines[0][0] = '\0';
+    }
+    
+    // Start editor loop
+    render_editor(&editor);
+    
+    bool needs_redraw = false;
+    while (true) {
+        needs_redraw = process_input(&editor);
+        if (needs_redraw) {
+            render_editor(&editor);
+        }
+        Sleep(50);
+    }
 }
