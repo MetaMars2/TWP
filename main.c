@@ -45,7 +45,7 @@ typedef struct _editor {
 } EDITOR;
 
 void init_editor(EDITOR* editor);
-void render_status_bar(EDITOR* editor, STATE STATE);
+
 bool process_input(EDITOR* editor);
 CURSOR get_cursor_input();
 COMMANDS get_command_input(STATE state);
@@ -73,7 +73,6 @@ int main(int argc, char* argv[]) {
     init_editor(&editor);
 
     render_editor(&editor);
-    render_status_bar(&editor, editor.state);
 
     bool needs_redraw = false;
 
@@ -113,31 +112,7 @@ void init_editor(EDITOR* editor) {
     );
 }
 
-void render_status_bar(EDITOR* editor, STATE STATE) {
-    
-    CONSOLE_SCREEN_BUFFER_INFO csbi;
-    GetConsoleScreenBufferInfo(editor->current_buffer, &csbi);
-    int last_line = csbi.srWindow.Bottom;
 
-    COORD status_pos = {0, last_line};
-    DWORD written;
-
-    // Clear the status line
-    FillConsoleOutputCharacter(editor->current_buffer, ' ', csbi.dwSize.X, status_pos, &written);
-
-    // Create status line
-    char status_text[256];
-    sprintf(status_text, " %s\t\t%s",
-            STATE == normal ? "NORMAL" : "INSERT", editor->filename);
-    
-    // Write status text
-    WriteConsoleOutputCharacter(editor->current_buffer, status_text, 
-                                strlen(status_text), status_pos, &written);
-
-    // Position cursor
-    SetConsoleCursorPosition(editor->current_buffer, 
-                            (COORD){editor->cursor_x, editor->cursor_y});
-}
 
 CURSOR get_cursor_input(){
     int ch = _getch();
@@ -205,6 +180,15 @@ bool process_input(EDITOR* editor){
                 GetConsoleScreenBufferInfo(editor->current_buffer, &csbi);
                 int cmd_line = csbi.srWindow.Bottom;
                 
+                // Save the current state to restore later
+                char* old_line = (char*)malloc(csbi.dwSize.X + 1);
+                DWORD read;
+                COORD read_pos = {0, cmd_line};
+                ReadConsoleOutputCharacter(editor->current_buffer, old_line, csbi.dwSize.X, read_pos, &read);
+                old_line[csbi.dwSize.X] = '\0';
+                
+                COORD old_cursor_pos = {editor->cursor_x, editor->cursor_y};
+                
                 // Prepare command prompt in buffer
                 char prompt[3] = ":\0";
                 COORD cmd_pos = {0, cmd_line};
@@ -234,10 +218,9 @@ bool process_input(EDITOR* editor){
                     if(i < 9) {
                         cmd[i++] = ch;
                         // Echo the character to the buffer
-                        // Create a temporary character array to hold the character
-                        char temp[2] = {ch, '\0'};  // Create a proper C string with null terminator
+                        char temp[2] = {ch, '\0'};
                         WriteConsoleOutputCharacter(editor->current_buffer, temp, 1, 
-                                                  (COORD){i, cmd_line}, &written);
+                                                   (COORD){i, cmd_line}, &written);
                     }
                 }
                 cmd[i] = '\0';
@@ -250,7 +233,16 @@ bool process_input(EDITOR* editor){
                     else if(strcmp(cmd, "new") == 0) execute_command(editor, cmd_new);
                 }
                 
-                // Force redraw after command execution
+                // Restore the command line
+                if(ch == 27) { // Only restore if ESC was pressed
+                    WriteConsoleOutputCharacter(editor->current_buffer, old_line, strlen(old_line), 
+                                              read_pos, &written);
+                    SetConsoleCursorPosition(editor->current_buffer, old_cursor_pos);
+                } else {
+                    // For successful commands, let render_editor handle the redraw
+                }
+                
+                free(old_line);
                 input_changed = true;
             }
         } else if (editor->state == insert){
@@ -301,19 +293,40 @@ bool process_input(EDITOR* editor){
 void execute_command(EDITOR* editor, COMMANDS cmd){
     switch(cmd){
         case cmd_save:{
+            // Get console info
             CONSOLE_SCREEN_BUFFER_INFO csbi;
-            GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+            GetConsoleScreenBufferInfo(editor->current_buffer, &csbi);
             int msgline = csbi.srWindow.Bottom - 1;
-
-            printf("\033[%d;0H\033[K", msgline);
-            printf("File save successfully"); // TODO: Save file implementation & file save confirmation
-
+            
+            // Prepare message
+            char message[] = "File saved successfully";
+            COORD msg_pos = {0, msgline};
+            DWORD written;
+            
+            // Clear the message line first
+            FillConsoleOutputCharacter(editor->current_buffer, ' ', csbi.dwSize.X, msg_pos, &written);
+            
+            // Write the message to the buffer
+            WriteConsoleOutputCharacter(editor->current_buffer, message, strlen(message), 
+                                      msg_pos, &written);
+            
             editor->is_saved = true;
+            
+            // Save cursor position
+            COORD old_pos = {editor->cursor_x, editor->cursor_y};
+            
+            // Let the message stay visible for a moment
             Sleep(1500);
+            
+            // Clear the message
+            FillConsoleOutputCharacter(editor->current_buffer, ' ', csbi.dwSize.X, msg_pos, &written);
+            
+            // Restore cursor position
+            SetConsoleCursorPosition(editor->current_buffer, old_pos);
             break;
         }
         case cmd_exit:
-            if(editor->is_saved ){ // TODO: confirm_exit() needs to be implemented
+            if(editor->is_saved){ // TODO: confirm_exit() needs to be implemented
                 exit(0);
             }
             exit(0);
@@ -359,7 +372,7 @@ void render_editor(EDITOR* editor) {
     
     // Create status text
     char status_text[256];
-    sprintf(status_text, " %s\t\t%s",
+    sprintf(status_text, " %-10s %s",
             editor->state == normal ? "NORMAL" : "INSERT", editor->filename);
     
     // Write status text to the new buffer
