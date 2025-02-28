@@ -2,6 +2,7 @@
 #define EDITOR_H
 
 #include "common.h"
+#include "config.h"
 
 #define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
 
@@ -17,6 +18,7 @@ typedef struct _editor {
     bool is_saved;
     HANDLE current_buffer;
     HANDLE new_buffer;
+    Config* config;
 } EDITOR;
 
 void init_editor(EDITOR* editor);

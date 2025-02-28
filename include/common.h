@@ -25,7 +25,8 @@ typedef enum _commands {
     cmd_save,
     cmd_exit,
     cmd_open,
-    cmd_new
+    cmd_new,
+    cmd_config
 } COMMANDS;
 
 typedef enum _state {

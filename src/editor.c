@@ -1,4 +1,5 @@
 #include "../include/editor.h"
+#include "../include/config.h"
 
 void init_editor(EDITOR* editor) {
     memset(editor->lines, 0, sizeof(editor->lines));
@@ -8,6 +9,7 @@ void init_editor(EDITOR* editor) {
     editor->cursor_y = 0;
     editor->scroll_offset = 0;  // Initialize scroll position
     editor->state = normal;
+    editor->config = load_config("twp.conf");
     
     if (editor->filepath[0] == '\0') {
         strcpy(editor->filepath, "untitled.txt");
