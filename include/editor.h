@@ -9,7 +9,8 @@ typedef struct _editor {
     char lines[MAX_LINES][MAX_COLUMNS];
     int line_count;
     int cursor_x; 
-    int cursor_y; 
+    int cursor_y;
+    int scroll_offset;  // Track which line is at the top of the screen
     STATE state;
     char filename[FILENAME_MAX];
     char filepath[FILENAME_MAX];

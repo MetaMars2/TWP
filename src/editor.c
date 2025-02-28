@@ -6,6 +6,7 @@ void init_editor(EDITOR* editor) {
     editor->line_count = 1;
     editor->cursor_x = 0;
     editor->cursor_y = 0;
+    editor->scroll_offset = 0;  // Initialize scroll position
     editor->state = normal;
     
     if (editor->filepath[0] == '\0') {
@@ -73,6 +74,11 @@ void init_editor(EDITOR* editor) {
 }
 
 void set_cursor_position(EDITOR* editor, int x, int y) {
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    GetConsoleScreenBufferInfo(editor->current_buffer, &csbi);
+    int screen_height = csbi.srWindow.Bottom - csbi.srWindow.Top - 1;
+
+    // Validate Y position
     if (y >= editor->line_count) {
         y = editor->line_count - 1;
     }
@@ -80,6 +86,15 @@ void set_cursor_position(EDITOR* editor, int x, int y) {
         y = 0;
     }
     
+    // Handle scrolling when cursor moves off-screen
+    if (y < editor->scroll_offset) {
+        editor->scroll_offset = y;
+    }
+    else if (y >= editor->scroll_offset + screen_height) {
+        editor->scroll_offset = y - screen_height + 1;
+    }
+    
+    // Validate X position based on current line length
     int line_length = strlen(editor->lines[y]);
     if (x > line_length) {
         x = line_length;
@@ -90,5 +105,8 @@ void set_cursor_position(EDITOR* editor, int x, int y) {
     
     editor->cursor_x = x;
     editor->cursor_y = y;
-    SetConsoleCursorPosition(editor->current_buffer, (COORD){x, y});
+    
+    // Update cursor position on screen
+    int screen_y = y - editor->scroll_offset;
+    SetConsoleCursorPosition(editor->current_buffer, (COORD){x, screen_y});
 }
