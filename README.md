@@ -14,6 +14,8 @@ TWP Editor is a lightweight, Vim-like text editor for the Windows terminal. It o
 * **Full file path support**
 * **Status bar** showing editor state and filename
 * **Smooth rendering** using double-buffering system
+* **Scrolling navigation** for large files
+* **Page navigation** for quick movement through documents
 
 ## Installation
 
@@ -73,6 +75,10 @@ TWP Editor is a lightweight, Vim-like text editor for the Windows terminal. It o
 * `j` - Move cursor down
 * `k` - Move cursor up
 * `l` - Move cursor right
+* `u` - Page up (scroll up one screen)
+* `d` - Page down (scroll down one screen)
+* `g` - Jump to the beginning of the file
+* `G` - Jump to the end of the file
 * `i` - Enter Insert mode
 * `:` - Enter command mode
 

@@ -23,6 +23,20 @@ bool process_input(EDITOR* editor) {
                 set_cursor_position(editor, editor->cursor_x, editor->cursor_y + 1);
             } else if(ch == 'i') {
                 editor->state = insert;
+            } else if(ch == 'u') {  // Page Up
+                CONSOLE_SCREEN_BUFFER_INFO csbi;
+                GetConsoleScreenBufferInfo(editor->current_buffer, &csbi);
+                int screen_height = csbi.srWindow.Bottom - csbi.srWindow.Top - 1;
+                set_cursor_position(editor, editor->cursor_x, editor->cursor_y - screen_height);
+            } else if(ch == 'd') {  // Page Down
+                CONSOLE_SCREEN_BUFFER_INFO csbi;
+                GetConsoleScreenBufferInfo(editor->current_buffer, &csbi);
+                int screen_height = csbi.srWindow.Bottom - csbi.srWindow.Top - 1;
+                set_cursor_position(editor, editor->cursor_x, editor->cursor_y + screen_height);
+            } else if(ch == 'g') {  // Go to top
+                set_cursor_position(editor, 0, 0);
+            } else if(ch == 'G') {  // Go to bottom
+                set_cursor_position(editor, 0, editor->line_count - 1);
             } else if(ch == ':') {
                 CONSOLE_SCREEN_BUFFER_INFO csbi;
                 GetConsoleScreenBufferInfo(editor->current_buffer, &csbi);
