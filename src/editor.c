@@ -8,6 +8,8 @@ void init_editor(EDITOR* editor) {
     editor->cursor_y = 0;
     editor->scroll_offset = 0;  // Initialize scroll position
     editor->state = normal;
+    editor->command_buffer[0] = '\0';
+    editor->command_position = 0;
     
     if (editor->filepath[0] == '\0') {
         strcpy(editor->filepath, "untitled.txt");

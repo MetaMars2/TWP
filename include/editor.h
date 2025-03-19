@@ -17,7 +17,10 @@ typedef struct _editor {
     bool is_saved;
     HANDLE current_buffer;
     HANDLE new_buffer;
+    char command_buffer[MAX_COLUMNS];
+    int command_position;
 } EDITOR;
+
 
 void init_editor(EDITOR* editor);
 

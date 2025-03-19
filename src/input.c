@@ -9,175 +9,200 @@ bool process_input(EDITOR* editor) {
         int ch = _getch();
         input_changed = true;
 
-        if(editor->state == normal) {
-            if(ch == 'h' && editor->cursor_x > 0) {
-                set_cursor_position(editor, editor->cursor_x - 1, editor->cursor_y);
-            } else if(ch == 'l') {
-                size_t line_length = strlen(editor->lines[editor->cursor_y]);
-                if(editor->cursor_x < line_length) {
-                    set_cursor_position(editor, editor->cursor_x + 1, editor->cursor_y);
-                }
-            } else if(ch == 'k' && editor->cursor_y > 0) {
-                set_cursor_position(editor, editor->cursor_x, editor->cursor_y - 1);
-            } else if(ch == 'j' && editor->cursor_y < editor->line_count - 1) {
-                set_cursor_position(editor, editor->cursor_x, editor->cursor_y + 1);
-            } else if(ch == 'i') {
-                editor->state = insert;
-            } else if(ch == 'u') {  // Page Up
-                CONSOLE_SCREEN_BUFFER_INFO csbi;
-                GetConsoleScreenBufferInfo(editor->current_buffer, &csbi);
-                int screen_height = csbi.srWindow.Bottom - csbi.srWindow.Top - 1;
-                set_cursor_position(editor, editor->cursor_x, editor->cursor_y - screen_height);
-            } else if(ch == 'd') {  // Page Down
-                CONSOLE_SCREEN_BUFFER_INFO csbi;
-                GetConsoleScreenBufferInfo(editor->current_buffer, &csbi);
-                int screen_height = csbi.srWindow.Bottom - csbi.srWindow.Top - 1;
-                set_cursor_position(editor, editor->cursor_x, editor->cursor_y + screen_height);
-            } else if(ch == 'g') {  // Go to top
-                set_cursor_position(editor, 0, 0);
-            } else if(ch == 'G') {  // Go to bottom
-                set_cursor_position(editor, 0, editor->line_count - 1);
-            } else if(ch == ':') {
-                CONSOLE_SCREEN_BUFFER_INFO csbi;
-                GetConsoleScreenBufferInfo(editor->current_buffer, &csbi);
-                int cmd_line = csbi.srWindow.Bottom;
-                
-                char* old_line = (char*)malloc(csbi.dwSize.X + 1);
-                DWORD read;
-                COORD read_pos = {0, cmd_line};
-                ReadConsoleOutputCharacter(editor->current_buffer, old_line, csbi.dwSize.X, read_pos, &read);
-                old_line[csbi.dwSize.X] = '\0';
-                
-                COORD old_cursor_pos = {editor->cursor_x, editor->cursor_y};
-                
-                char prompt[3] = ":\0";
-                COORD cmd_pos = {0, cmd_line};
-                DWORD written;
-                
-                FillConsoleOutputCharacter(editor->current_buffer, ' ', csbi.dwSize.X, cmd_pos, &written);
-                WriteConsoleOutputCharacter(editor->current_buffer, prompt, strlen(prompt), cmd_pos, &written);
-                SetConsoleCursorPosition(editor->current_buffer, (COORD){1, cmd_line});
-                
-                char cmd[10] = {0};
-                int i = 0;
-                
-                while(1) {
-                    ch = _getch();
-                    if(ch == 13) break;
-                    if(ch == 27) {
-                        cmd[0] = '\0';
-                        break;
-                    }
-                    if(i < 9) {
-                        cmd[i++] = ch;
-                        char temp[2] = {ch, '\0'};
-                        WriteConsoleOutputCharacter(editor->current_buffer, temp, 1, 
-                                                   (COORD){i, cmd_line}, &written);
-                    }
-                }
-                cmd[i] = '\0';
-                
-                if(strlen(cmd) > 0) {
-                    if(strcmp(cmd, "w") == 0) execute_command(editor, cmd_save);
-                    else if(strcmp(cmd, "q") == 0) execute_command(editor, cmd_exit);
-                    else if(strcmp(cmd, "o") == 0) execute_command(editor, cmd_open);
-                    else if(strcmp(cmd, "new") == 0) execute_command(editor, cmd_new);
-                }
-                
-                if(ch == 27) {
-                    WriteConsoleOutputCharacter(editor->current_buffer, old_line, strlen(old_line), 
-                                              read_pos, &written);
-                    SetConsoleCursorPosition(editor->current_buffer, old_cursor_pos);
-                }
-                
-                free(old_line);
-                input_changed = true;
-            }
-        } else if (editor->state == insert) {
-            if(ch == 27) {
-                editor->state = normal;
-            } else if(ch == 0 || ch == 224) {
-                ch = _getch();
-                
-                switch(ch) {
-                    case 72: // Up arrow
-                        if(editor->cursor_y > 0) {
-                            set_cursor_position(editor, editor->cursor_x, editor->cursor_y - 1);
-                        }
-                        break;
-                        
-                    case 80: // Down arrow
-                        if(editor->cursor_y < editor->line_count - 1) {
-                            set_cursor_position(editor, editor->cursor_x, editor->cursor_y + 1);
-                        }
-                        break;
-                        
-                    case 75: // Left arrow
-                        if(editor->cursor_x > 0) {
-                            set_cursor_position(editor, editor->cursor_x - 1, editor->cursor_y);
-                        }
-                        break;
-                        
-                    case 77: // Right arrow
-                        if(editor->cursor_x < strlen(editor->lines[editor->cursor_y])) {
-                            set_cursor_position(editor, editor->cursor_x + 1, editor->cursor_y);
-                        }
-                        break;
-                }
-            } else if(ch == 13) {
-                int cur_line = editor->cursor_y;
-                int cur_col = editor->cursor_x;
-
-                if(editor->line_count < MAX_LINES) {
-                    for(int i = editor->line_count; i > cur_line; i--) {
-                        strcpy(editor->lines[i], editor->lines[i - 1]);
-                    }
-
-                    strcpy(editor->lines[cur_line + 1], &editor->lines[cur_line][cur_col]);
-                    editor->lines[cur_line][cur_col] = '\0';
-                    editor->line_count++;
-                    set_cursor_position(editor, 0, cur_line + 1);
-                }
-            } else if(ch == 8 || ch == 127) {
-                if(editor->cursor_x > 0) {
-                    int col = editor->cursor_x;
-                    int line = editor->cursor_y;
-
-                    memmove(&editor->lines[line][col - 1],
-                            &editor->lines[line][col],
-                            strlen(&editor->lines[line][col]) + 1);
-
-                    set_cursor_position(editor, col - 1, line);
-                }
-                else if(editor->cursor_y > 0) {
-                    int cur_line = editor->cursor_y;
-                    int prev_line = cur_line - 1;
-                    int new_cursor_x = strlen(editor->lines[prev_line]);
-
-                    strcat(editor->lines[prev_line], editor->lines[cur_line]);
-
-                    for (int i = cur_line; i < editor->line_count - 1; i++) {
-                        strcpy(editor->lines[i], editor->lines[i + 1]);
-                    }
-
-                    editor->lines[editor->line_count - 1][0] = '\0';
-                    editor->line_count--;
-                    set_cursor_position(editor, new_cursor_x, prev_line);
-                }
-            } else { 
-                int col = editor->cursor_x;
-                int line = editor->cursor_y;
-
-                memmove(&editor->lines[line][col + 1],
-                        &editor->lines[line][col],
-                        strlen(&editor->lines[line][col]) + 1);
-
-                editor->lines[line][col] = ch;
-                set_cursor_position(editor, col + 1, line);
-            }
+        switch(editor->state){
+            case normal:
+                input_changed = state_normal_input(editor, ch, input_changed);
+                break;
+            case command:
+                state_command_input(editor, ch, input_changed);
+                break;
+            case insert:
+                state_insert_input(editor, ch, input_changed);
+                break;
+            
         }
     }
+
     return input_changed;
+}
+
+bool state_normal_input(EDITOR *editor, char ch, bool input_changed) {
+    
+    // State transitions
+    if(ch == 'i'){
+        editor->state = insert;
+    } else if(ch == ':') {
+        editor->state = command;
+    }
+
+    if(ch == 'h' && editor->cursor_x > 0) {
+        set_cursor_position(editor, editor->cursor_x - 1, editor->cursor_y);
+    } else if(ch == 'l') {
+        size_t line_length = strlen(editor->lines[editor->cursor_y]);
+        if(editor->cursor_x < line_length) {
+            set_cursor_position(editor, editor->cursor_x + 1, editor->cursor_y);
+        }
+    } else if(ch == 'k' && editor->cursor_y > 0) {
+        set_cursor_position(editor, editor->cursor_x, editor->cursor_y - 1);
+    } else if(ch == 'j' && editor->cursor_y < editor->line_count - 1) {
+        set_cursor_position(editor, editor->cursor_x, editor->cursor_y + 1);
+    } 
+    
+    if(ch == 'u') {  // Page Up
+        CONSOLE_SCREEN_BUFFER_INFO csbi;
+        GetConsoleScreenBufferInfo(editor->current_buffer, &csbi);
+        int screen_height = csbi.srWindow.Bottom - csbi.srWindow.Top - 1;
+        set_cursor_position(editor, editor->cursor_x, editor->cursor_y - screen_height);
+    } else if(ch == 'd') {  // Page Down
+        CONSOLE_SCREEN_BUFFER_INFO csbi;
+        GetConsoleScreenBufferInfo(editor->current_buffer, &csbi);
+        int screen_height = csbi.srWindow.Bottom - csbi.srWindow.Top - 1;
+        set_cursor_position(editor, editor->cursor_x, editor->cursor_y + screen_height);
+    } 
+    
+    if(ch == 'g') {  // Go to top
+        set_cursor_position(editor, 0, 0);
+    } else if(ch == 'G') {  // Go to bottom
+        set_cursor_position(editor, 0, editor->line_count - 1);
+    }
+
+    return input_changed;
+}
+
+void state_insert_input(EDITOR *editor, char ch, bool input_changed) {
+    if(ch == 27) {
+        editor->state = normal;
+    } else if(ch == 0 || ch == 224) {
+        ch = _getch();
+        
+        switch(ch) {
+            case 72: // Up arrow
+                if(editor->cursor_y > 0) {
+                    set_cursor_position(editor, editor->cursor_x, editor->cursor_y - 1);
+                }
+                break;
+                
+            case 80: // Down arrow
+                if(editor->cursor_y < editor->line_count - 1) {
+                    set_cursor_position(editor, editor->cursor_x, editor->cursor_y + 1);
+                }
+                break;
+                
+            case 75: // Left arrow
+                if(editor->cursor_x > 0) {
+                    set_cursor_position(editor, editor->cursor_x - 1, editor->cursor_y);
+                }
+                break;
+                
+            case 77: // Right arrow
+                if(editor->cursor_x < strlen(editor->lines[editor->cursor_y])) {
+                    set_cursor_position(editor, editor->cursor_x + 1, editor->cursor_y);
+                }
+                break;
+        }
+    } else if(ch == 13) {
+        int cur_line = editor->cursor_y;
+        int cur_col = editor->cursor_x;
+
+        if(editor->line_count < MAX_LINES) {
+            for(int i = editor->line_count; i > cur_line; i--) {
+                strcpy(editor->lines[i], editor->lines[i - 1]);
+            }
+
+            strcpy(editor->lines[cur_line + 1], &editor->lines[cur_line][cur_col]);
+            editor->lines[cur_line][cur_col] = '\0';
+            editor->line_count++;
+            set_cursor_position(editor, 0, cur_line + 1);
+        }
+    } else if(ch == 8 || ch == 127) {
+        if(editor->cursor_x > 0) {
+            int col = editor->cursor_x;
+            int line = editor->cursor_y;
+
+            memmove(&editor->lines[line][col - 1],
+                    &editor->lines[line][col],
+                    strlen(&editor->lines[line][col]) + 1);
+
+            set_cursor_position(editor, col - 1, line);
+        }
+        else if(editor->cursor_y > 0) {
+            int cur_line = editor->cursor_y;
+            int prev_line = cur_line - 1;
+            int new_cursor_x = strlen(editor->lines[prev_line]);
+
+            strcat(editor->lines[prev_line], editor->lines[cur_line]);
+
+            for (int i = cur_line; i < editor->line_count - 1; i++) {
+                strcpy(editor->lines[i], editor->lines[i + 1]);
+            }
+
+            editor->lines[editor->line_count - 1][0] = '\0';
+            editor->line_count--;
+            set_cursor_position(editor, new_cursor_x, prev_line);
+        }
+    } else { 
+        int col = editor->cursor_x;
+        int line = editor->cursor_y;
+
+        size_t current_len = strlen(editor->lines[line]);
+        if(current_len < MAX_LINE_LENGTH - 1) {
+            memmove(&editor->lines[line][col + 1],
+                &editor->lines[line][col],
+                strlen(&editor->lines[line][col]) + 1);
+
+            editor->lines[line][col] = ch;
+            set_cursor_position(editor, col + 1, line);
+        }
+        
+    }
+}
+
+void state_command_input(EDITOR *editor, char ch, bool input_changed) {
+    // If first entry to command mode, initialize buffer
+    if (editor->command_buffer[0] == '\0' && ch == ':') {
+        editor->command_position = 0;
+        return;
+    }
+    
+    // Handle key input
+    if (ch == 13) { // Enter - execute command
+        editor->command_buffer[editor->command_position] = '\0';
+        
+        // Process command
+        if (strlen(editor->command_buffer) > 0) {
+            if (strcmp(editor->command_buffer, "w") == 0) 
+                execute_command(editor, cmd_save);
+            else if (strcmp(editor->command_buffer, "q") == 0) 
+                execute_command(editor, cmd_exit);
+            else if (strcmp(editor->command_buffer, "o") == 0) 
+                execute_command(editor, cmd_open);
+            else if (strcmp(editor->command_buffer, "new") == 0) 
+                execute_command(editor, cmd_new);
+        }
+        
+        // Reset and return to normal mode
+        editor->command_buffer[0] = '\0';
+        editor->command_position = 0;
+        editor->state = normal;
+    }
+    else if (ch == 27) { // Escape - cancel command
+        editor->command_buffer[0] = '\0';
+        editor->command_position = 0;
+        editor->state = normal;
+    }
+    else if (ch == 8 || ch == 127) { // Backspace
+        if (editor->command_position > 0) {
+            editor->command_position--;
+            editor->command_buffer[editor->command_position] = '\0';
+        }
+    }
+    else if (editor->command_position < MAX_COLUMNS - 1) {
+        // Add character to buffer
+        if (ch >= 32 && ch <= 126) { // Printable characters
+            editor->command_buffer[editor->command_position++] = ch;
+            editor->command_buffer[editor->command_position] = '\0';
+        }
+    }
 }
 
 void execute_command(EDITOR* editor, COMMANDS cmd) {
