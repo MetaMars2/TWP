@@ -4,6 +4,6 @@
 #include "common.h"
 #include "editor.h"
 
-void open_create_file(char* filename, SAVE_OPEN_MODE mode);
+void open_create_file(char* filename);
 
 #endif // FILEOPS_H

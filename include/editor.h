@@ -3,8 +3,6 @@
 
 #include "common.h"
 
-#define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
-
 typedef struct _editor {
     char lines[MAX_LINES][MAX_COLUMNS];
     int line_count;

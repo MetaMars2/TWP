@@ -69,50 +69,57 @@ void show_startup_menu() {
     printf("%s", footer);
 
     while(true) {
-        int ch = _getch();
-        switch(ch) {
-            case 'n': {
-                system("cls");
-                SetConsoleCursorPosition(console, (COORD){0, 0});
-                printf("Enter path for new file (can include directories): ");
-                
-                char filepath[FILENAME_MAX] = {0};
-                fflush(stdin);
-                fgets(filepath, FILENAME_MAX, stdin);
-                
-                size_t len = strlen(filepath);
-                if (len > 0 && filepath[len-1] == '\n') {
-                    filepath[len-1] = '\0';
-                    len--;
-                }
-                
-                if (len > 0) {
-                    open_create_file(filepath, open);
-                } else {
-                    open_create_file(NULL, open);
-                }
-                return;
-            }
-            case 'o': {
-                system("cls");
-                SetConsoleCursorPosition(console, (COORD){0, 0});
-                printf("Enter full path to file: ");
-                
-                char filepath[FILENAME_MAX] = {0};
-                scanf("%s", filepath);
-                open_create_file(filepath, open);
-                return;
-            }
-            case 'h': {
-                system("cls");
-                SetConsoleCursorPosition(console, (COORD){0, 0});
-                printf("Help not implemented yet\n");
-                Sleep(1500);
-                show_startup_menu(); // Redraw menu
-                return;
-            }
-            case 'q':
-                exit(0);
-        }
+        menu_selection(console);
     }
+}
+
+void menu_selection(HANDLE console){
+    int ch = _getch();
+
+    switch(ch) {
+        case 'n': {
+            system("cls");
+            SetConsoleCursorPosition(console, (COORD){0, 0});
+            printf("Enter path for new file (can include directories): ");
+            
+            char filepath[FILENAME_MAX] = {0};
+            fflush(stdin);
+            fgets(filepath, FILENAME_MAX, stdin);
+            
+            size_t len = strlen(filepath);
+            if (len > 0 && filepath[len-1] == '\n') {
+                filepath[len-1] = '\0';
+                len--;
+            }
+            
+            if (len > 0) {
+                open_create_file(filepath);
+            } else {
+                open_create_file(NULL);
+            }
+            return;
+        }
+        case 'o': {
+            system("cls");
+            SetConsoleCursorPosition(console, (COORD){0, 0});
+            printf("Enter full path to file: ");
+            
+            char filepath[FILENAME_MAX] = {0};
+            scanf("%s", filepath);
+            open_create_file(filepath);
+            return;
+        }
+        case 'h': {
+            system("cls");
+            SetConsoleCursorPosition(console, (COORD){0, 0});
+            printf("Help not implemented yet\n");
+            Sleep(1500);
+            show_startup_menu(); // Redraw menu
+            return;
+        }
+        case 'q':
+            exit(0);
+    }
+
+
 }

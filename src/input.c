@@ -14,10 +14,10 @@ bool process_input(EDITOR* editor) {
                 input_changed = state_normal_input(editor, ch, input_changed);
                 break;
             case command:
-                state_command_input(editor, ch, input_changed);
+                state_command_input(editor, ch);
                 break;
             case insert:
-                state_insert_input(editor, ch, input_changed);
+                state_insert_input(editor, ch);
                 break;
             
         }
@@ -26,7 +26,7 @@ bool process_input(EDITOR* editor) {
     return input_changed;
 }
 
-bool state_normal_input(EDITOR *editor, char ch, bool input_changed) {
+bool state_normal_input(EDITOR *editor, int ch, bool input_changed) {
     
     // State transitions
     if(ch == 'i'){
@@ -39,7 +39,7 @@ bool state_normal_input(EDITOR *editor, char ch, bool input_changed) {
         set_cursor_position(editor, editor->cursor_x - 1, editor->cursor_y);
     } else if(ch == 'l') {
         size_t line_length = strlen(editor->lines[editor->cursor_y]);
-        if(editor->cursor_x < line_length) {
+        if(editor->cursor_x < (int)line_length) {
             set_cursor_position(editor, editor->cursor_x + 1, editor->cursor_y);
         }
     } else if(ch == 'k' && editor->cursor_y > 0) {
@@ -69,7 +69,7 @@ bool state_normal_input(EDITOR *editor, char ch, bool input_changed) {
     return input_changed;
 }
 
-void state_insert_input(EDITOR *editor, char ch, bool input_changed) {
+void state_insert_input(EDITOR *editor, int ch) {
     if(ch == 27) {
         editor->state = normal;
     } else if(ch == 0 || ch == 224) {
@@ -95,7 +95,7 @@ void state_insert_input(EDITOR *editor, char ch, bool input_changed) {
                 break;
                 
             case 77: // Right arrow
-                if(editor->cursor_x < strlen(editor->lines[editor->cursor_y])) {
+                if(editor->cursor_x < (int)strlen(editor->lines[editor->cursor_y])) {
                     set_cursor_position(editor, editor->cursor_x + 1, editor->cursor_y);
                 }
                 break;
@@ -140,6 +140,26 @@ void state_insert_input(EDITOR *editor, char ch, bool input_changed) {
             editor->line_count--;
             set_cursor_position(editor, new_cursor_x, prev_line);
         }
+    } else if(ch == 9) { // Handle Tab key
+        int col = editor->cursor_x;
+        int line = editor->cursor_y;
+        
+        // Check if there's enough space for a tab (TAB_SIZE spaces)
+        size_t current_len = strlen(editor->lines[line]);
+        if(current_len + TAB_SIZE < MAX_LINE_LENGTH) {
+            // Make space for TAB_SIZE spaces
+            memmove(&editor->lines[line][col + TAB_SIZE],
+                   &editor->lines[line][col],
+                   strlen(&editor->lines[line][col]) + 1);
+            
+            // Insert spaces
+            for(int i = 0; i < TAB_SIZE; i++) {
+                editor->lines[line][col + i] = ' ';
+            }
+            
+            // Update cursor position
+            set_cursor_position(editor, col + TAB_SIZE, line);
+        }
     } else { 
         int col = editor->cursor_x;
         int line = editor->cursor_y;
@@ -157,7 +177,7 @@ void state_insert_input(EDITOR *editor, char ch, bool input_changed) {
     }
 }
 
-void state_command_input(EDITOR *editor, char ch, bool input_changed) {
+void state_command_input(EDITOR *editor, int ch) {
     // If first entry to command mode, initialize buffer
     if (editor->command_buffer[0] == '\0' && ch == ':') {
         editor->command_position = 0;
@@ -326,7 +346,7 @@ void execute_command(EDITOR* editor, COMMANDS cmd) {
             FillConsoleOutputCharacter(editor->current_buffer, ' ', csbi.dwSize.X, msg_pos, &written);
             
             if(filepath[0] != '\0') {
-                open_create_file(filepath, open);
+                open_create_file(filepath);
                 exit(0);
             }
             break;
@@ -390,7 +410,7 @@ void execute_command(EDITOR* editor, COMMANDS cmd) {
             FillConsoleOutputCharacter(editor->current_buffer, ' ', csbi.dwSize.X, msg_pos, &written);
             
             if(ch != 27) {
-                open_create_file(filepath[0] != '\0' ? filepath : NULL, open);
+                open_create_file(filepath[0] != '\0' ? filepath : NULL);
                 exit(0);
             }
             break;

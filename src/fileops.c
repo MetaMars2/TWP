@@ -2,7 +2,7 @@
 #include "../include/display.h"
 #include "../include/input.h"
 
-void open_create_file(char* filepath, SAVE_OPEN_MODE mode) {
+void open_create_file(char* filepath) {
     system("cls");
     
     HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);

@@ -4,6 +4,7 @@
 #define MAX_LINES 1000
 #define MAX_COLUMNS 400
 #define MAX_LINE_LENGTH 1000
+#define TAB_SIZE 4       // Number of spaces for a tab
 
 typedef enum _cursor { 
     cur_left,
